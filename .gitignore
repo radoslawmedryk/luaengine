@@ -1,3 +1,4 @@
 Corebyte.LuaEngineNS/bin/
 Corebyte.LuaEngineNS/obj/
 .vs/
+*.dll

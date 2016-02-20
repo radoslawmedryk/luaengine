@@ -11,9 +11,10 @@ namespace Corebyte.LuaEngineNS
         #region Variables
 
         public LuaEngine LuaEngine { get; private set; }
-
         public CompilationStatus CompilationStatus { get; private set; }
         public String ErrorMessage { get; private set; }
+
+        internal int ChunkID { get; private set; }
 
         #endregion
 
@@ -22,6 +23,8 @@ namespace Corebyte.LuaEngineNS
         internal CompiledChunk(LuaEngine luaEngine)
         {
             LuaEngine = luaEngine;
+            ChunkID = luaEngine.GetFreeChunkID();
+            
             // TODO: Store a some kind of an internal instance to compiled chunk
         }
 
@@ -29,7 +32,7 @@ namespace Corebyte.LuaEngineNS
 
         #region Methods
 
-        public ChunkInstance ExecuteChunk()
+        public ChunkInstance Execute()
         {
             // TODO: Notify Lua core that we wish to execute this chunk
             // (add it to scripts queue)

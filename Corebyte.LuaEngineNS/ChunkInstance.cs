@@ -15,6 +15,8 @@ namespace Corebyte.LuaEngineNS
         public bool IsPaused { get; private set; }
         public bool IsAlive { get; private set; }
 
+        internal int InstanceID { get; private set; }
+
         #endregion
 
         #region Constructors
@@ -22,6 +24,7 @@ namespace Corebyte.LuaEngineNS
         internal ChunkInstance(LuaEngine luaEngine)
         {
             LuaEngine = luaEngine;
+            InstanceID = luaEngine.GetFreeInstanceID();
 
             // TODO: Store information about the internal Lua coroutine-based instance here
         }
@@ -30,7 +33,7 @@ namespace Corebyte.LuaEngineNS
 
         #region Methods
 
-        public void PauseExecution(bool waitForPaused)
+        public void Pause(bool waitForPaused)
         {
             if (IsPaused)
                 return;
@@ -39,7 +42,7 @@ namespace Corebyte.LuaEngineNS
             throw new NotImplementedException();
         }
 
-        public void ContinueExecution(bool waitForContinue)
+        public void Continue(bool waitForContinue)
         {
             if (!IsPaused)
                 return;
@@ -48,7 +51,7 @@ namespace Corebyte.LuaEngineNS
             throw new NotImplementedException();
         }
 
-        public void StopExecution(bool waitForStop)
+        public void Stop(bool waitForStop)
         {
             if (!IsAlive)
                 return;
