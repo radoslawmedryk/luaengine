@@ -11,9 +11,13 @@ namespace Corebyte.LuaEngineNS
         #region Variables
 
         public LuaEngine LuaEngine { get; private set; }
+        public CompiledChunk Chunk { get; private set; }
 
-        public bool IsPaused { get; private set; }
-        public bool IsAlive { get; private set; }
+        public LuaError LuaError { get; internal set; }
+        public bool IsPaused { get; internal set; }
+        public bool IsAlive { get; internal set; }
+
+        // TODO: runtime Lua error here
 
         internal int InstanceID { get; private set; }
 
@@ -21,12 +25,13 @@ namespace Corebyte.LuaEngineNS
 
         #region Constructors
 
-        internal ChunkInstance(LuaEngine luaEngine)
+        internal ChunkInstance(LuaEngine luaEngine, CompiledChunk chunk)
         {
             LuaEngine = luaEngine;
+            Chunk = chunk;
             InstanceID = luaEngine.GetFreeInstanceID();
 
-            // TODO: Store information about the internal Lua coroutine-based instance here
+            IsAlive = true;
         }
 
         #endregion
@@ -35,19 +40,17 @@ namespace Corebyte.LuaEngineNS
 
         public void Pause(bool waitForPaused)
         {
-            if (IsPaused)
-                return;
+            LuaEngine.InstanceExecutionAction(this, ExecutionControlAction.Pause);
 
-            //TODO: Notify Lua core that we wish to puase execution of this instance
+            // TODO: waitForPaused
             throw new NotImplementedException();
         }
 
         public void Continue(bool waitForContinue)
         {
-            if (!IsPaused)
-                return;
+            LuaEngine.InstanceExecutionAction(this, ExecutionControlAction.Continue);
 
-            //TODO: Notify Lua core that we wish to continue execution of this instance
+            // TODO: waitForContinue
             throw new NotImplementedException();
         }
 
@@ -56,7 +59,9 @@ namespace Corebyte.LuaEngineNS
             if (!IsAlive)
                 return;
 
-            //TODO: Notify Lua core that we wish to kill execution of this instance
+            LuaEngine.InstanceExecutionAction(this, ExecutionControlAction.Terminate);
+
+            // TODO: waitForStop
             throw new NotImplementedException();
         }
 

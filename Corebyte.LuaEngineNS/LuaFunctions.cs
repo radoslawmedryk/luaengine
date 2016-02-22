@@ -39,6 +39,12 @@ namespace Corebyte.LuaEngineNS
             Thread.Sleep(time);
         }
 
+        [RegisterLuaFunction("getTime")]
+        public long getTime()
+        {
+            return LuaEngine.StopwatchTime;
+        }
+
         #endregion
     }
 }
