@@ -1,6 +1,10 @@
 # luaengine
 
-LUAENGINE IS NOT YET FINISHED NOR APPLICABLE. THIS GITHUB ENTRY IS NOW USED ONLY FOR DEVELOPMENT USE ONLY.
+Version v0.1 of LuaEngine has been released. It is not yet well tested, so bugs are possible. Please report every bug you find to the author, thank you.
+
+LuaEngine needs those libraries to run:
+NLua: http://nlua.org/
+Lua 5.2.3: http://www.lua.org/ftp/
 
 LuaEngine is a C# project featuring an Lua engine capable of:
 - managing the compilation of Lua scripts, giving the user information if any compilation-time error occured in the script;
