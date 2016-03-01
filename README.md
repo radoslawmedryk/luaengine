@@ -8,15 +8,18 @@ Lua 5.2.3: http://www.lua.org/ftp/
 
 LuaEngine is a C# project featuring an Lua engine capable of:
 - managing the compilation of Lua scripts, giving the user information if any compilation-time error occured in the script;
+- The most important functionality: adding wait(milis) function to Lua - it allows holding execution of one instance of script, while other instances are still working
 - running every script in a secure Lua Sandbox, denying the user from disturbing the work of the Sandbox/OS;
 - allowing a managed execution of multiple scripts/instances of script on the same time, concurrently;
 - giving the user control over the execution of scripts, by allowing him to pause/stop any instance of any running script;
-- allowing the user to control how many instances of any given script can be running at the same time;
 
 What was the main goal when creating LuaEngine?
 LuaEngine is perfectly fited for use in applications that needs to give the end user functionality to create small (or even bigger ones) pieces of Lua scripts that will control diffrent functionalities of the application. LuaEngine offers safe LuaSandbox and management of executed scripts out-of-the-box.
 
 LuaEngine itself is not a bridge library between C# and Lua - it depends on NLua project in this task (http://nlua.org). LuaEngine is a project working one level higher - managing compilation and execution of Lua scripts in a sandboxed, multithreading environment.
+
+### Documentation
+Documentation is not yet existing. It will change soon, though.
 
 ### Examples of LuaEngine usage
 
