@@ -12,6 +12,8 @@ LuaEngine is a C# project featuring an Lua engine capable of:
 What was the main goal when creating LuaEngine?
 LuaEngine is perfectly fited for use in applications that needs to give the end user functionality to create small (or even bigger ones) pieces of Lua scripts that will control diffrent functionalities of the application. LuaEngine offers safe LuaSandbox and management of executed scripts out-of-the-box.
 
+LuaEngine itself is not a bridge library between C# and Lua - it depends on NLua project in this task (http://nlua.org). LuaEngine is a project working one level higher - managing compilation and execution of Lua scripts in a sandboxed, multithreading environment.
+
 ### Examples of LuaEngine usage
 
 ```C#
