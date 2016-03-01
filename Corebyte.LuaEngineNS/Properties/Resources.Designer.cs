@@ -61,11 +61,61 @@ namespace Corebyte.LuaEngineNS.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to .
+        ///   Looks up a localized string similar to local INSTANCES = {} -- [instanceID] = {instanceID, coroutine, status}
+        ///local CHUNKS = {} -- [chunkID] = {chunkID, chunkFunction}
+        ///
+        ///local SANDBOX_ENV = {}
+        ///local INCOMING = nil
+        ///local outgoingNeedsReset = true
+        ///local OUTGOING = nil
+        ///
+        ///-- conts:
+        ///-- CCA_ : CompilationControlAction
+        ///local CCA_CompileNew = 0
+        ///local CCA_RemoveCompiled = 1
+        ///
+        ///-- CS_ : CompilationStatus
+        ///local CS_AwaitingCompilation = 0
+        ///local CS_CompiledOK = 1
+        ///local CS_CompileError = 2
+        ///
+        ///-- ES_ : ExecutionStatus
+        ///local ES_Running = 0
+        ///local E [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string coroutines {
             get {
                 return ResourceManager.GetString("coroutines", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to function InitializeSandboxEnv()
+        ///    local ENV = {
+        ///		print=print,
+        ///		wait=wait,
+        ///		
+        ///		assert=assert,
+        ///		error=error,
+        ///		ipairs=ipairs,
+        ///		next=next,
+        ///		pairs=pairs,
+        ///		pcall=pcall,
+        ///		select=select,
+        ///		tonumber=tonumber,
+        ///		tostring=tostring,
+        ///		type=type,
+        ///		_VERSION=_VERSION,
+        ///		xpcall=xpcall,
+        ///		coroutine = {	create = coroutine.create, resume = coroutine.resume, 
+        ///						--[[/!\ running = coroutine.running,]] status = coroutine.status, 
+        ///						wrap = coroutine.wrap, yield = coroutine.yield
+        ///					},
+        ///		s [rest of string was truncated]&quot;;.
+        /// </summary>
+        internal static string sandbox_env {
+            get {
+                return ResourceManager.GetString("sandbox_env", resourceCulture);
             }
         }
     }

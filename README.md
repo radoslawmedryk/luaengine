@@ -13,39 +13,80 @@ What was the main goal when creating LuaEngine?
 LuaEngine is perfectly fited for use in applications that needs to give the end user functionality to create small (or even bigger ones) pieces of Lua scripts that will control diffrent functionalities of the application. LuaEngine offers safe LuaSandbox and management of executed scripts out-of-the-box.
 
 ### Examples of LuaEngine usage
+
 ```C#
-LuaEngine engine = new LuaEngine();
-// print function is by default printing to the console.
-// wait is internal LuaEngine function allowing pause in execution of the script for given ammount of time,
-// without stoping other running Lua instances.
-String script = "for i=1,5 do print(i) wait(1000) end";
-CompiledChunk chunk = engine.CompileChunk(script);
+public class CustomLuaFunctions : LuaFunctions
+{
+    [RegisterLuaFunction("AddNumbers")]
+    public double AddNumbers(double a, double b)
+    {
+        return a+b;
+    }
 
-ChunkInstance i1 = chunk.ExecuteChunk();
-ChunkInstance i2 = chunk.ExecuteChunk();
-ChunkInstance i3 = chunk.ExecuteChunk();
+    [RegisterLuaFunction("GetCSharpDog")]
+    public Dog GetCSharpDog(String name)
+    {
+        return new Dog(name);
+    }
+}
+```
 
+```C#
+public class Dog
+{
+    public String Name { get; private set; }
+
+    public Dog(String name)
+    {
+        Name = name;
+    }
+
+    public void Bark()
+    {
+        Console.WriteLine(Name + ": Bark! Bark!");
+    }
+}
+```
+
+```C#
+var customFunctions = new CustomLuaFunctions();
+LuaEngine engine = new LuaEngine(customFunctions);
+
+String chunkText1 = "print(AddNumbers(3,7))" + 
+                    "wait(2500)" +
+                    "print('message after wait')";
+// Lua's print function by default prints to Console. It can be overridden.
+
+// WARNING! CSharp objects exposed to Lua are NOT Sandboxed!
+// NEVER expose them to end-users if you don't trust them,
+// as they can execute almost ANY CSharp code by accessing just one
+// CSharp object. If you need to expose data from CSharp to end-user
+// write a wrapper around it in lua code not accessible by the end user.
+String chunkText2 = "local dog = GetCSharpDog('Steve')" +
+                    "dog:Bark()";
+
+CompiledChunk chunk1 = engine.CompileChunk(chunkText1);
+CompiledChunk chunk2 = engine.CompileChunk(chunkText2);
+
+chunk1.WaitForCompilation();
+chunk2.WaitForCompilation();
+if (chunk1.LuaError != null || chunk2.LuaError != null)
+{
+    if (chunk1.LuaError != null)
+        Console.WriteLine("chunk1 error: " + chunk1.LuaError.ErrorMessage);
+    if (chunk2.LuaError != null)
+        Console.WriteLine("chunk2 error: " + chunk2.LuaError.ErrorMessage);
+    return;
+}
+
+ChunkInstance instance1 = chunk1.Execute();
 Thread.Sleep(1500);
+ChunkInstance instance2 = chunk2.Execute();
 
-i2.StopExecution();
-i3.PauseExecution();
-
-Thread.Sleep(2000);
-
-i3.ContinueExecution();
+instance1.WaitForEnded();
+instance2.WaitForEnded();
+Console.WriteLine("All instances finished. Press enter to quit.");
 Console.ReadLine();
-
-// Produced output:
-// 1
-// 1
-// 1
-// 2
-// 2
-// 2
-// 3
-// 4
-// 5
-// 3
-// 4
-// 5
+instance1.Dispose(); instance2.Dispose(); chunk1.Dispose(); chunk2.Dispose();
+engine.Dispose();
 ```

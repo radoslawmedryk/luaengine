@@ -1,21 +1,20 @@
 ﻿namespace Corebyte.LuaEngineNS
 {
-    internal class ExecutionControlEntity
+    public class ExecutionQueueEntity
     {
         #region Variables
 
+        public CompiledChunk Chunk { get; private set; }
         public ChunkInstance Instance { get; private set; }
-        public ExecutionControlAction Action { get; set; }
-        public int ActionInt { get { return (int)Action; } } // Value used by Lua
 
         #endregion
 
         #region Constructors
 
-        internal ExecutionControlEntity(ChunkInstance instance, ExecutionControlAction action)
+        public ExecutionQueueEntity(CompiledChunk chunk, ChunkInstance instance)
         {
+            Chunk = chunk;
             Instance = instance;
-            Action = action;
         }
 
         #endregion

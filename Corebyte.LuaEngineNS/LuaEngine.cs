@@ -1,25 +1,26 @@
 ﻿using NLua;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Corebyte.LuaEngineNS
 {
-    public class LuaEngine
+    public class LuaEngine : IDisposable
     {
         #region Variables
 
-        public bool IsEngineStarted { get; private set; }
         public bool IsEngineDead { get; private set; }
 
         public long StopwatchTime
         {
             get { return LuaStopwatch.ElapsedMilliseconds; }
         }
+
+        public ReadOnlyCollection<String> RegisteredFunctionsNames { get; private set; }
+        private List<String> _RegisteredFunctionsNames { get; set; }
 
         private Lua Lua { get; set; }
         private Thread LuaThread { get; set; }
@@ -33,19 +34,30 @@ namespace Corebyte.LuaEngineNS
         private Dictionary<int, ChunkInstance> RunningInstances { get; set; }
 
         private List<CompilationControlEntity> CompilationControlList { get; set; }
-        private List<CompiledChunk> ExecutionQueue { get; set; }
+        private List<ExecutionQueueEntity> ExecutionQueue { get; set; }
         private List<ExecutionControlEntity> ExecutionControlList { get; set; }
 
         private Random RNG { get; set; }
+
+        private EventWaitHandle LuaStopedWaitHandle { get; set; }
 
         #endregion
 
         #region Constructors
 
         public LuaEngine()
+            : this(null)
+        { }
+
+        public LuaEngine(LuaFunctions registerFunctions)
         {
             Lua = new Lua();
             LuaThread = new Thread(CoroutinesWatch);
+
+            LuaFunctions = (registerFunctions != null)? registerFunctions : new LuaFunctions();
+
+            _RegisteredFunctionsNames = new List<string>();
+            RegisteredFunctionsNames = new ReadOnlyCollection<string>(_RegisteredFunctionsNames);
 
             LuaStopwatch = new Stopwatch();
             LuaStopwatch.Start();
@@ -54,11 +66,14 @@ namespace Corebyte.LuaEngineNS
             RunningInstances = new Dictionary<int, ChunkInstance>();
 
             CompilationControlList = new List<CompilationControlEntity>();
-            ExecutionQueue = new List<CompiledChunk>();
+            ExecutionQueue = new List<ExecutionQueueEntity>();
             ExecutionControlList = new List<ExecutionControlEntity>();
 
             RNG = new Random();
-            // TODO: constructor logic
+            LuaStopedWaitHandle = new EventWaitHandle(false, EventResetMode.ManualReset);
+
+            RegisterLuaFunctions(LuaFunctions);
+            StartEngine();
         }
 
         #endregion
@@ -67,47 +82,11 @@ namespace Corebyte.LuaEngineNS
 
         #region PublicMethods
 
-        public void RegisterLuaFunctions(LuaFunctions luaFunctions)
-        {
-            if (luaFunctions == null)
-                throw new ArgumentNullException();
-
-            if (LuaFunctions != null)
-                throw new InvalidOperationException("LuaFunctions for this LuaEngine instance are already registered.");
-
-            LuaFunctions = luaFunctions;
-            luaFunctions.LuaEngine = this;
-
-            // TODO: registering functions code here
-            throw new NotImplementedException();
-        }
-
-        public void StartEngine()
-        {
-            if (IsEngineStarted || IsEngineDead)
-                throw new InvalidOperationException("LuaEngine cannot be started, becouse it was started before.");
-            IsEngineStarted = true;
-
-            if (LuaFunctions == null)// if user haven't registered custom LuaFunctions, register default one.
-                RegisterLuaFunctions(new LuaFunctions());
-
-            //LuaThread.Start();
-
-            throw new NotImplementedException();
-        }
-
-        public void ShutdownEngine()
-        {
-            if (!IsEngineStarted || IsEngineDead)
-                throw new InvalidOperationException("LuaEngine cannot be shuted down, becouse it is not started or is already dead.");
-            IsEngineStarted = false;
-            IsEngineDead = true;
-
-            throw new NotImplementedException();
-        }
-
         public CompiledChunk CompileChunk(String luaCodeText)
         {
+            if (IsEngineDead)
+                throw new LuaEngineNotRunningException();
+
             lock (communicationLock)
             {
                 // Create new CompiledChunk object, queue it for compilation to Lua core
@@ -120,27 +99,22 @@ namespace Corebyte.LuaEngineNS
             }
         }
 
+        public void ShutdownEngine(bool waitForShutdown)
+        {
+            IsEngineDead = true;
+
+            if (waitForShutdown)
+                LuaStopedWaitHandle.WaitOne();
+        }
+
         #endregion
 
         #region NonPublicMethods
 
-        internal void Lock()
-        {
-            if (Monitor.IsEntered(communicationLock))
-                throw new InvalidOperationException();
-
-            Monitor.Enter(communicationLock);
-        }
-
-        internal void Unlock()
-        {
-            Monitor.Exit(communicationLock);
-        }
-
         internal int GetFreeChunkID()
         {
-            if (!Monitor.IsEntered(communicationLock))
-                throw new SynchronizationLockException();
+            /*if (!Monitor.IsEntered(communicationLock))
+                throw new SynchronizationLockException();*/
 
             int current;
             do
@@ -153,8 +127,8 @@ namespace Corebyte.LuaEngineNS
 
         internal int GetFreeInstanceID()
         {
-            if (!Monitor.IsEntered(communicationLock))
-                throw new SynchronizationLockException();
+            /*if (!Monitor.IsEntered(communicationLock))
+                throw new SynchronizationLockException();*/
 
             int current;
             do
@@ -167,20 +141,13 @@ namespace Corebyte.LuaEngineNS
 
         internal void NotifyDeadCompiledChunk(CompiledChunk chunk)
         {
-            bool localLock = false;
-            try
+            lock (communicationLock)
             {
-                if (!Monitor.IsEntered(communicationLock)) // lock if not locked by current thread
-                {
-                    localLock = true;
-                    Monitor.Enter(communicationLock);
-                }
-
                 // Remove dead chunk from CompiledChunks
                 // Cleanup queues/lists, notify Lua core that chunk is dead
                 // RunningInstances are NOT removed. They will run until finished or stoped.
                 CompiledChunks.Remove(chunk.ChunkID);
-                ExecutionQueue.RemoveAll(Q => Q.ChunkID == chunk.ChunkID);
+                ExecutionQueue.RemoveAll(Q => Q.Chunk.ChunkID == chunk.ChunkID);
 
                 var CC = CompilationControlList.FirstOrDefault(Q => Q.Chunk.ChunkID == chunk.ChunkID);
                 if (CC != null)
@@ -189,83 +156,247 @@ namespace Corebyte.LuaEngineNS
                     CompilationControlList.Add(
                         new CompilationControlEntity(chunk, CompilationControlAction.RemoveCompiled));
             }
-            finally
-            {
-                if (localLock) // free lock if locked localy inside of this method
-                    Monitor.Exit(communicationLock);
-            }
         }
 
         internal ChunkInstance QueueChunkExecution(CompiledChunk chunk)
         {
-            // if chunk have compilation error then set error on instance and return here
-            ChunkInstance instance = new ChunkInstance(this, chunk);
-            if (chunk.LuaError != null)
+            lock (communicationLock)
             {
-                // no queying chunk for execution is done, as the chunk is proven to have compile-time error
-                instance.LuaError = chunk.LuaError;
-                instance.IsAlive = false;
-                return instance; // dead instance is returned
-            }
-
-            bool localLock = false;
-            try
-            {
-                if (!Monitor.IsEntered(communicationLock)) // lock if not locked by current thread
+                ChunkInstance instance = new ChunkInstance(this, chunk);
+                if (chunk.LuaError != null)
                 {
-                    localLock = true;
-                    Monitor.Enter(communicationLock);
+                    // no queying chunk for execution is done, as the chunk is proven to have compile-time error
+                    instance.LuaError = chunk.LuaError;
+                    instance.Status = ExecutionStatus.Terminated;
+                    return instance; // dead instance is returned
                 }
 
-                ExecutionQueue.Add(chunk);
+                instance.Status = ExecutionStatus.Running;
+                var EQE = new ExecutionQueueEntity(chunk, instance);
+                ExecutionQueue.Add(EQE);
                 RunningInstances.Add(instance.InstanceID, instance);
                 return instance; // alive instance is returned
-            }
-            finally
-            {
-                if (localLock) // free lock if locked localy inside of this method
-                    Monitor.Exit(communicationLock);
             }
         }
 
         internal void InstanceExecutionAction(ChunkInstance instance, ExecutionControlAction action)
         {
-            bool localLock = false;
-            try
+            lock (communicationLock)
             {
-                if (!Monitor.IsEntered(communicationLock)) // lock if not locked by current thread
+                if ((action == ExecutionControlAction.Pause && instance.Status != ExecutionStatus.Running) ||
+                (action == ExecutionControlAction.Continue && instance.Status != ExecutionStatus.Paused) || 
+                (action == ExecutionControlAction.Terminate && instance.Status != ExecutionStatus.Running && instance.Status != ExecutionStatus.Paused))
                 {
-                    localLock = true;
-                    Monitor.Enter(communicationLock);
+                    throw new InvalidOperationException();
                 }
 
-                ExecutionControlList.Add(
-                    new ExecutionControlEntity(instance, action));
-            }
-            finally
-            {
-                if (localLock) // free lock if locked localy inside of this method
-                    Monitor.Exit(communicationLock);
+                switch (action)
+                {
+                    case ExecutionControlAction.Continue:
+                        instance.Status = ExecutionStatus.Running;
+                        break;
+                    case ExecutionControlAction.Pause:
+                        instance.Status = ExecutionStatus.Paused;
+                        break;
+                    case ExecutionControlAction.Terminate:
+                        instance.Status = ExecutionStatus.Terminated;
+                        break;
+                }
+
+                var ECE = ExecutionControlList.FirstOrDefault(Q => Q.Instance.InstanceID == instance.InstanceID);
+                if (ECE == null)
+                    ExecutionControlList.Add(new ExecutionControlEntity(instance, action));
+                else
+                    ECE.Action = action;
             }
         }
 
-        internal List<OutgoingMessage> ExchangeMessages(List<IncomingMessage> incoming)
+        internal OutgoingMessage ExchangeMessages(LuaTable incoming)
         {
-            if (!Monitor.IsEntered(communicationLock))
-                throw new SynchronizationLockException();
+            lock (communicationLock)
+            {
+                if (incoming != null && !IsEngineDead)
+                {
+                    HandleChunkReports((LuaTable)incoming["chunkReports"]);
+                    HandleInstanceReports((LuaTable)incoming["instanceReports"]);
+                }
 
-            throw new NotImplementedException();
+                var outgoing = OutgoingMessage.Instance;
+                if (!IsEngineDead)
+                {
+                    outgoing.CopyCompilationControlList(CompilationControlList);
+                    outgoing.CopyExecutionQueue(ExecutionQueue);
+                    outgoing.CopyExecutionControlList(ExecutionControlList);
+
+                    CompilationControlList.Clear();
+                    ExecutionQueue.Clear();
+                    ExecutionControlList.Clear();
+                }
+                else
+                    outgoing.ShouldLuaTerminate = true;
+
+                return outgoing;
+            }
         }
-        
+
+        private void RegisterLuaFunctions(LuaFunctions luaFunctions)
+        {
+            if (luaFunctions == null)
+                throw new ArgumentNullException();
+
+            luaFunctions.LuaEngine = this;
+
+            var LuaFunctionsMethods = luaFunctions.GetType().GetMethods(
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Public);
+            foreach (var methodInfo in LuaFunctionsMethods)
+            {
+                var registerA = (RegisterLuaFunctionAttribute)methodInfo.GetCustomAttributes(typeof(RegisterLuaFunctionAttribute), true).FirstOrDefault();
+                if (registerA != null)
+                {
+                    string functionName = registerA.FunctionName;
+                    var internalA = (InternalLuaFunctionAttribute)methodInfo.GetCustomAttributes(typeof(InternalLuaFunctionAttribute), true).FirstOrDefault();
+                    if (internalA == null)
+                    {
+                        Lua.RegisterFunction(functionName, luaFunctions, methodInfo); // for internal use by the LuaEngine
+                        Lua.RegisterFunction("_CS_" + functionName, luaFunctions, methodInfo);
+                        _RegisteredFunctionsNames.Add(functionName);
+                    }
+                    else
+                        Lua.RegisterFunction(functionName, luaFunctions, methodInfo); // for internal use by the LuaEngine
+                }
+            }
+        }
+
+        private void StartEngine()
+        {
+            try
+            {
+                Lua.DoString(Properties.Resources.sandbox_env, "sandbox_env");
+                Lua.DoString(Properties.Resources.coroutines, "coroutines");
+                LuaThread.Start();
+                while (!LuaThread.IsAlive) ;
+            }
+            catch
+            {
+                IsEngineDead = true;
+                throw;
+            }
+        }
+
+        private void HandleChunkReports(LuaTable chunksReports)
+        {
+            foreach (LuaTable line in chunksReports.Values)
+            {
+                var temp = line["chunkID"];
+                var t = temp.GetType();
+                int chunkID = (int)(double)line["chunkID"];
+                var compilationStatus = (CompilationStatus)(int)(double)line["compilationStatus"];
+                String compilationError = (String)line["compilationError"];
+
+                if (!CompiledChunks.ContainsKey(chunkID))
+                    continue; // chunk with this ID is dead, but Lua core didn't knew that yet
+
+                var chunk = CompiledChunks[chunkID];
+                chunk.CompilationStatus = compilationStatus;
+                if (compilationStatus == CompilationStatus.CompileError)
+                    chunk.LuaError = new LuaError(LuaErrorType.CompileTimeError, compilationError);
+
+                line.Dispose();
+
+                chunk.NotifyCompilationFinished();
+            }
+            chunksReports.Dispose();
+        }
+
+        private void HandleInstanceReports(LuaTable instancesReports)
+        {
+            foreach (LuaTable line in instancesReports.Values)
+            {
+                int instanceID = (int)(double)line["instanceID"];
+                var newExecutionStatus = (ExecutionStatus)(int)(double)line["newExecutionStatus"];
+                var executionError = (string)line["executionError"];
+
+                if (!RunningInstances.ContainsKey(instanceID))
+                    throw new InvalidOperationException();
+                var instance = RunningInstances[instanceID];
+
+                bool notifyStarted = false;
+                bool notifyEnded = false;
+
+                if (!instance.AlreadyNotifiedStarted)
+                    notifyStarted = true;
+
+                if (newExecutionStatus == ExecutionStatus.Finished || newExecutionStatus == ExecutionStatus.Terminated)
+                {
+                    notifyEnded = true;
+
+                    instance.Status = newExecutionStatus;
+                    RunningInstances.Remove(instance.InstanceID);
+
+                    if (newExecutionStatus == ExecutionStatus.Terminated && !String.IsNullOrEmpty(executionError))
+                        instance.LuaError = new LuaError(LuaErrorType.RunTimeError, executionError);
+                    else if (newExecutionStatus == ExecutionStatus.Terminated && instance.Chunk.LuaError != null)
+                        instance.LuaError = instance.Chunk.LuaError;
+                }
+
+                line.Dispose();
+
+                if (notifyStarted)
+                    instance.NotifyInstanceStarted();
+                if (notifyEnded)
+                    instance.NotifyInstanceEnded();
+            }
+            instancesReports.Dispose();
+        }
+
         private void CoroutinesWatch()
         {
             var _coroutinesWatch = Lua.GetFunction("_coroutinesWatch");
             _coroutinesWatch.Call(); // _coroutinesWatch have ininite loop inside Lua core.
 
             // exits only on LuaEngine shutdown.
-            IsEngineStarted = false;
             IsEngineDead = true;
+            LuaStopedWaitHandle.Set();
         }
+
+        #region IDisposable Support
+        private bool disposedValue = false; // To detect redundant calls
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposedValue)
+            {
+                ShutdownEngine(true);
+
+                if (disposing)
+                {
+                    foreach (var C in CompiledChunks.Values)
+                        C.Dispose();
+                    foreach (var I in RunningInstances.Values)
+                        I.Dispose();
+
+                    Lua.Dispose();
+                }
+
+                disposedValue = true;
+            }
+        }
+
+        // override a finalizer only if Dispose(bool disposing) above has code to free unmanaged resources.
+        // ~LuaEngine() {
+        //   // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
+        //   Dispose(false);
+        // }
+
+        // This code added to correctly implement the disposable pattern.
+        public void Dispose()
+        {
+            // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
+            Dispose(true);
+        }
+        #endregion
 
         #endregion
 

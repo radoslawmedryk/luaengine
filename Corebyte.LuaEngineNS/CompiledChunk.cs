@@ -1,9 +1,5 @@
-﻿using NLua;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System;
+using System.Threading;
 
 namespace Corebyte.LuaEngineNS
 {
@@ -13,13 +9,15 @@ namespace Corebyte.LuaEngineNS
 
         public LuaEngine LuaEngine { get; private set; }
         public String LuaCodeText { get; private set; }
+        public String DebugName { get; private set; }
 
         public CompilationStatus CompilationStatus { get; internal set; }
-        public LuaError LuaError { get; private set; }
+        public LuaError LuaError { get; internal set; }
 
-        internal int ChunkID { get; private set; }
+        public int ChunkID { get; private set; }
         internal bool IsAlive { get; private set; }
-        internal LuaFunction ChunkFunction { get; private set; }
+
+        private EventWaitHandle CompilationFinishedWaitHandle { get; set; }
 
         #endregion
 
@@ -30,7 +28,10 @@ namespace Corebyte.LuaEngineNS
             LuaEngine = luaEngine;
             LuaCodeText = luaCodeText;
 
+            IsAlive = true;
             ChunkID = luaEngine.GetFreeChunkID();
+
+            CompilationFinishedWaitHandle = new EventWaitHandle(false, EventResetMode.ManualReset);
         }
 
         #endregion
@@ -39,12 +40,25 @@ namespace Corebyte.LuaEngineNS
 
         public ChunkInstance Execute()
         {
+            if (LuaEngine.IsEngineDead)
+                throw new LuaEngineNotRunningException();
+
             if (!IsAlive)
                 throw new InvalidOperationException("Cannot execute this instance of CompiledChunk - it is dead. Have you disposed it?");
 
             // Notify Lua core that we wish to execute this chunk
             // (add it to scripts queue)
             return LuaEngine.QueueChunkExecution(this);
+        }
+
+        public void WaitForCompilation()
+        {
+            CompilationFinishedWaitHandle.WaitOne();
+        }
+
+        internal void NotifyCompilationFinished()
+        {
+            CompilationFinishedWaitHandle.Set();
         }
 
         #endregion
@@ -60,6 +74,7 @@ namespace Corebyte.LuaEngineNS
                 {
                     IsAlive = false;
                     LuaEngine.NotifyDeadCompiledChunk(this);
+                    CompilationFinishedWaitHandle.Dispose();
                 }
 
                 disposedValue = true;

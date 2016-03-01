@@ -1,0 +1,187 @@
+local INSTANCES = {} -- [instanceID] = {instanceID, coroutine, status}
+local CHUNKS = {} -- [chunkID] = {chunkID, chunkFunction}
+
+local SANDBOX_ENV = {}
+local INCOMING = nil
+local outgoingNeedsReset = true
+local OUTGOING = nil
+
+-- conts:
+-- CCA_ : CompilationControlAction
+local CCA_CompileNew = 0
+local CCA_RemoveCompiled = 1
+
+-- CS_ : CompilationStatus
+local CS_AwaitingCompilation = 0
+local CS_CompiledOK = 1
+local CS_CompileError = 2
+
+-- ES_ : ExecutionStatus
+local ES_Running = 0
+local ES_Paused = 1
+local ES_Finished = 2
+local ES_Terminated = 3
+
+-- ECA_ : ExecutionControlAction
+local ECA_Continue = 0
+local ECA_Pause = 1
+local ECA_Terminate = 2
+
+function _coroutinesWatch()
+    SANDBOX_ENV = InitializeSandboxEnv()
+    
+    while true do -- loop is finished only on LuaEngine shutdown
+        INCOMING = _exchangeMessages(OUTGOING) -- exchange messages with C# LuaEngine
+        if outgoingNeedsReset then
+            OUTGOING = {chunkReports = {}, instanceReports = {}} -- reset OUTGOING table after exchanging messages
+            outgoingNeedsReset = false
+        end
+        
+        HandleIncomingMessages()
+        ProcessInstancesExecutions()
+    end
+end
+
+function HandleIncomingMessages()
+    if (INCOMING == nil) then return end
+    
+    if (INCOMING.ShouldLuaTerminate == true) then
+            os.exit() -- stop execution of this script, so LuaThread can die peacefully
+        end
+    
+    local compilationControlList = INCOMING.CompilationControlList
+    local executionQueue = INCOMING.ExecutionQueue
+    local executionControlList = INCOMING.ExecutionControlList
+    
+    if compilationControlList ~= nil then
+        HandleIncomingCompilationControlList(compilationControlList)
+    end
+    
+    if executionQueue ~= nil then
+        HandleIncomingExecutionQueue(executionQueue)
+    end
+    
+    if executionControlList ~= nil then
+        HandleIncomingExecutionControlList(executionControlList)
+    end
+end
+
+function HandleIncomingCompilationControlList(compilationControlList)
+    local it = compilationControlList:GetEnumerator()
+    while (it:MoveNext()) do
+        local current = it.Current
+        local chunkID = current.Chunk.ChunkID
+        local action = current.ActionInt
+        
+        if (action == CCA_CompileNew) then
+            local luaCodeText = current.Chunk.LuaCodeText
+            local debugName = current.Chunk.DebugName
+            debugName = (debugName ~= nil and debugName ~= "") and debugName or luaCodeText
+            
+            local chunkReport = nil
+            local f, err = load(luaCodeText, debugName, "t", SANDBOX_ENV)
+            if (f ~= nil) then
+                CHUNKS[chunkID] = {chunkID = chunkID, chunkFunction = f}
+                chunkReport = {chunkID = chunkID, compilationStatus = CS_CompiledOK, compilationError = nil}
+            else
+                chunkReport = {chunkID = chunkID, compilationStatus = CS_CompileError, compilationError = err}
+            end
+            AddOutgoingChunkReport(chunkReport)
+        elseif (action == CCA_RemoveCompiled) then
+            CHUNKS[chunkID] = nil
+        end
+    end
+    it:Dispose()
+end
+
+function HandleIncomingExecutionQueue(executionQueue)
+    local it = executionQueue:GetEnumerator()
+    while (it:MoveNext()) do
+        local current = it.Current
+        local chunk = current.Chunk
+        local instance = current.Instance
+        
+        local chunkID = chunk.ChunkID
+        local instanceID = instance.InstanceID
+        local luaChunk = CHUNKS[chunkID]
+        
+        local instanceReport = nil
+        if luaChunk == nil then
+            instanceReport = {instanceID = instanceID, newExecutionStatus = ES_Terminated, executionError = nil}
+        else
+            local co = coroutine.create(luaChunk.chunkFunction)
+            INSTANCES[instanceID] = {instanceID = instanceID, coroutine = co, status = ES_Running}
+            instanceReport = {instanceID = instanceID, newExecutionStatus = ES_Running, executionError = nil}
+        end
+        AddOutgoingInstanceReport(instanceReport)
+    end
+    it:Dispose()
+end
+
+function HandleIncomingExecutionControlList(executionControlList)
+    local it = executionControlList:GetEnumerator()
+    while (it:MoveNext()) do
+        local current = it.Current
+        local instance = current.Instance
+        local action = current.ActionInt
+        local instanceID = instance.InstanceID
+        local luaInstance = INSTANCES[instanceID]
+        if luaInstance ~= nil then
+            local instanceReport = nil
+            
+            if action == ECA_Continue and luaInstance.status == ES_Paused then
+                luaInstance.status = ES_Running
+                instanceReport = {instanceID = instanceID, newExecutionStatus = ES_Running, executionError = nil}
+            elseif action == ECA_Pause and luaInstance.status == ES_Running then
+                luaInstance.status = ES_Paused
+                instanceReport = {instanceID = instanceID, newExecutionStatus = ES_Paused, executionError = nil}
+            elseif action == ECA_Terminate and (luaInstance.status == ES_Running or luaInstance.status == ES_Paused) then
+                luaInstance.status = ES_Terminated
+                instanceReport = {instanceID = instanceID, newExecutionStatus = ES_Terminated, executionError = nil}
+            end
+            
+            if instanceReport ~= nil then
+                AddOutgoingInstanceReport(instanceReport)
+            end
+        end
+    end
+    it:Dispose()
+end
+
+function AddOutgoingChunkReport(chunkReport)
+    OUTGOING.chunkReports[#OUTGOING.chunkReports + 1] = chunkReport
+    outgoingNeedsReset = true
+    --print("AddOutgoingChunkReport", "chunkID = " .. tostring(chunkReport.chunkID), "compilationStatus = " .. tostring(chunkReport.compilationStatus), "compilationError = " .. tostring(chunkReport.compilationError))
+end
+
+function AddOutgoingInstanceReport(instanceReport)
+    OUTGOING.instanceReports[#OUTGOING.instanceReports + 1] = instanceReport
+    outgoingNeedsReset = true
+    --print("AddOutgoingChunkReport", "instanceID = " .. tostring(instanceReport.instanceID), "newExecutionStatus = " .. tostring(instanceReport.newExecutionStatus), "executionError = " .. tostring(instanceReport.executionError))
+end
+
+function ProcessInstancesExecutions()
+    local removeInstances = {}
+    for instanceID, instance in pairs(INSTANCES) do
+        local instanceReport = nil
+        if instance.status == ES_Running then
+            local isOk, err = coroutine.resume(instance.coroutine)
+            if not isOk then
+                removeInstances[#removeInstances + 1] = instanceID
+                instanceReport = {instanceID = instanceID, newExecutionStatus = ES_Terminated, executionError = err}
+            else
+                if coroutine.status(instance.coroutine) == "dead" then
+                    removeInstances[#removeInstances + 1] = instanceID
+                    instanceReport = {instanceID = instanceID, newExecutionStatus = ES_Finished, executionError = nil}
+                end
+            end
+        end
+        if instanceReport ~= nil then
+            AddOutgoingInstanceReport(instanceReport)
+        end
+    end
+    
+    for i, instanceID in ipairs(removeInstances) do
+        INSTANCES[instanceID] = nil
+    end
+end

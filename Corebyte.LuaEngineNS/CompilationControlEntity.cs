@@ -1,18 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Corebyte.LuaEngineNS
+﻿namespace Corebyte.LuaEngineNS
 {
     internal class CompilationControlEntity
     {
         #region Variables
 
-        internal CompiledChunk Chunk { get; private set; }
-        internal CompilationControlAction Action { get; set; }
-
+        public CompiledChunk Chunk { get; private set; }
+        public CompilationControlAction Action { get; set; }
+        public int ActionInt { get { return (int)Action; } } // Value used by Lua
         #endregion
 
         #region Constructors

@@ -121,4 +121,7 @@
   <data name="coroutines" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\coroutines.txt;System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089;windows-1250</value>
   </data>
+  <data name="sandbox_env" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\sandbox_env.txt;System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089;windows-1250</value>
+  </data>
 </root>

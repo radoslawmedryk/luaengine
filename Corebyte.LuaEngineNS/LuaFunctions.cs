@@ -1,9 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using NLua;
+using System;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Corebyte.LuaEngineNS
 {
@@ -28,21 +25,36 @@ namespace Corebyte.LuaEngineNS
         
         [RegisterLuaFunction("_exchangeMessages")]
         [InternalLuaFunction]
-        public Dictionary<String, object> _exchangeMessages(Dictionary<String, object> incoming)
+        internal OutgoingMessage _exchangeMessages(LuaTable incoming)
         {
-            throw new NotImplementedException();
+            // TODO: improve this;
+            // TEMP: Thread.Sleep to let other threads do more work and to decrease CPU usage
+            Thread.Sleep(10);
+
+            var outgoing = LuaEngine.ExchangeMessages(incoming);
+            if (incoming != null)
+                incoming.Dispose();
+
+            return outgoing;
         }
 
         [RegisterLuaFunction("_sleep")]
-        public void _sleep(int time)
+        internal void _sleep(int time)
         {
             Thread.Sleep(time);
         }
 
         [RegisterLuaFunction("getTime")]
-        public long getTime()
+        internal long getTime()
         {
             return LuaEngine.StopwatchTime;
+        }
+
+        [RegisterLuaFunction("_print")]
+        [InternalLuaFunction]
+        internal void _print(object input)
+        {
+            Console.WriteLine(input != null ? input.ToString() : "nil");
         }
 
         #endregion
